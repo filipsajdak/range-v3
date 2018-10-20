@@ -11,6 +11,18 @@ for(auto&& e : rng)
     // use of e
 }
 ```
+### Example of the ranges
+```c++
+int carr[] = { 1, 2, 3, 4, 5 };           // c-array is a range
+
+auto init_list = { 11, 22, 33, 44, 55 };  // initializer_list is a range
+
+vector vec = { 12, 23, 34, 56, 67 };      // containers are ranges
+
+string str = "This is also a range";      // string is a range
+
+string_view str_view = str;               // string_view is a range
+```
 
 ## What is a Container
 
@@ -72,4 +84,50 @@ I have checked latest version of library and it seems to compile in:
 Visual Studio 2017 is not able to compile it due to `Internal Error`.
 
 You can check that on [godbolt](https://gcc.godbolt.org/z/XkdbRv).
+
+# What are the benefits?
+
+You may wander what is a big deal about range-v3 library.
+
+In short instead of 
+```c++ 
+auto v = std::vector{1,7,2,4,1,7,4,6,0,1};
+
+std::sort(v.begin(), v.end());
+```
+you can write:
+```c++
+auto v = std::vector{1,7,2,4,1,7,4,6,0,1};
+
+action::sort(v);
+```
+So... it is only to be able to pass containers instead of two iterators to it?
+
+No there is something much bigger then that - it all about composability of algorithms.
+
+Let's take a closer look how composition of two algorithms `sort` and `unique` is done in current standard library
+```c++
+auto v = std::vector{1,7,2,4,1,7,4,6,0,1};
+
+std::sort(v.begin(), v.end());
+
+auto it = std::unique(v.begin(), v.end());
+
+v.erase(it, v.end());
+
+std::cout << view::all(v) << std::endl;
+```
+
+and the same code rewritten using range-v3
+```c++
+auto v = std::vector{1,7,2,4,1,7,4,6,0,1};
+
+action::unique(action::sort(v));
+
+std::cout << view::all(v) << std::endl;
+```
+
+This is much cleaner. As you can see we can compose range actions in a way 
+```c++
+action1(action2(action3(action4(... actionN(rng)))))
 
