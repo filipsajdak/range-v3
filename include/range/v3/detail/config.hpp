@@ -41,6 +41,9 @@ namespace ranges
 #endif
 
 #ifndef RANGES_ASSERT
+    // Always use our hand-rolled assert implementation on older GCCs, which do
+    // not allow assert to be used in a constant expression, and on MSVC whose
+    // assert is not marked [[noreturn]].
 #if !defined(NDEBUG) && \
     ((defined(__GNUC__) && !defined(__clang__) && (__GNUC__ < 5 || defined(__MINGW32__))) || \
      defined(_MSVC_STL_VERSION))
@@ -171,6 +174,7 @@ namespace ranges
 #define RANGES_CXX_IF_CONSTEXPR_14 0L
 #define RANGES_CXX_IF_CONSTEXPR_17 201606L
 
+// Implementation-specific diagnostic control
 #if defined(_MSC_VER) && !defined(__clang__)
 #define RANGES_CXX_VER _MSVC_LANG
 #define RANGES_DIAGNOSTIC_PUSH __pragma(warning(push))
@@ -193,6 +197,7 @@ namespace ranges
 #define RANGES_DIAGNOSTIC_IGNORE_INCONSISTENT_OVERRIDE
 #define RANGES_DIAGNOSTIC_IGNORE_RANGE_LOOP_ANALYSIS
 #define RANGES_DIAGNOSTIC_IGNORE_DEPRECATED_DECLARATIONS RANGES_DIAGNOSTIC_IGNORE(4996)
+#define RANGES_DIAGNOSTIC_IGNORE_DEPRECATED_THIS_CAPTURE
 
 #else // ^^^ defined(_MSC_VER) ^^^ / vvv !defined(_MSC_VER) vvv
 // Generic configuration using SD-6 feature test macros with fallback to __cplusplus
@@ -202,7 +207,11 @@ namespace ranges
 #define RANGES_DIAGNOSTIC_PUSH RANGES_PRAGMA(GCC diagnostic push)
 #define RANGES_DIAGNOSTIC_POP RANGES_PRAGMA(GCC diagnostic pop)
 #define RANGES_DIAGNOSTIC_IGNORE_PRAGMAS RANGES_PRAGMA(GCC diagnostic ignored "-Wpragmas")
-#define RANGES_DIAGNOSTIC_IGNORE(X) RANGES_DIAGNOSTIC_IGNORE_PRAGMAS RANGES_PRAGMA(GCC diagnostic ignored "-Wunknown-pragmas") RANGES_PRAGMA(GCC diagnostic ignored X)
+#define RANGES_DIAGNOSTIC_IGNORE(X) \
+    RANGES_DIAGNOSTIC_IGNORE_PRAGMAS \
+    RANGES_PRAGMA(GCC diagnostic ignored "-Wunknown-pragmas") \
+    RANGES_PRAGMA(GCC diagnostic ignored "-Wunknown-warning-option") \
+    RANGES_PRAGMA(GCC diagnostic ignored X)
 #define RANGES_DIAGNOSTIC_IGNORE_SHADOWING RANGES_DIAGNOSTIC_IGNORE("-Wshadow")
 #define RANGES_DIAGNOSTIC_IGNORE_INDENTATION RANGES_DIAGNOSTIC_IGNORE("-Wmisleading-indentation")
 #define RANGES_DIAGNOSTIC_IGNORE_UNDEFINED_INTERNAL RANGES_DIAGNOSTIC_IGNORE("-Wundefined-internal")
@@ -219,6 +228,8 @@ namespace ranges
 #define RANGES_DIAGNOSTIC_IGNORE_INCONSISTENT_OVERRIDE RANGES_DIAGNOSTIC_IGNORE("-Winconsistent-missing-override")
 #define RANGES_DIAGNOSTIC_IGNORE_RANGE_LOOP_ANALYSIS RANGES_DIAGNOSTIC_IGNORE("-Wrange-loop-analysis")
 #define RANGES_DIAGNOSTIC_IGNORE_DEPRECATED_DECLARATIONS RANGES_DIAGNOSTIC_IGNORE("-Wdeprecated-declarations")
+#define RANGES_DIAGNOSTIC_IGNORE_DEPRECATED_THIS_CAPTURE RANGES_DIAGNOSTIC_IGNORE("-Wdeprecated-this-capture")
+
 #else
 #define RANGES_DIAGNOSTIC_PUSH
 #define RANGES_DIAGNOSTIC_POP
@@ -238,6 +249,7 @@ namespace ranges
 #define RANGES_DIAGNOSTIC_IGNORE_UNDEFINED_FUNC_TEMPLATE
 #define RANGES_DIAGNOSTIC_IGNORE_INCONSISTENT_OVERRIDE
 #define RANGES_DIAGNOSTIC_IGNORE_DEPRECATED_DECLARATIONS
+#define RANGES_DIAGNOSTIC_IGNORE_DEPRECATED_THIS_CAPTURE
 #endif
 #endif // MSVC/Generic configuration switch
 
@@ -398,7 +410,10 @@ namespace ranges
 #endif // RANGES_CXX_INLINE_VARIABLES
 
 #ifndef RANGES_CXX_DEDUCTION_GUIDES
-#ifdef __cpp_deduction_guides
+#if defined(__clang__) && defined(__apple_build_version__)
+// Apple's clang version doesn't do deduction guides very well.
+#define RANGES_CXX_DEDUCTION_GUIDES 0
+#elif defined(__cpp_deduction_guides)
 #define RANGES_CXX_DEDUCTION_GUIDES __cpp_deduction_guides
 #else
 #define RANGES_CXX_DEDUCTION_GUIDES RANGES_CXX_FEATURE(DEDUCTION_GUIDES)

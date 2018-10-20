@@ -59,8 +59,6 @@ namespace ranges
                 stride_view_base() = default;
                 RANGES_CXX14_CONSTEXPR
                 stride_view_base(Rng &&rng, range_difference_type_t<Rng> const stride)
-                    noexcept(std::is_nothrow_constructible<stride_view_adaptor<Rng>, Rng>::value &&
-                        noexcept(std::declval<stride_view_base &>().calc_offset(SizedRange<Rng>())))
                   : stride_view_adaptor<Rng>{std::move(rng)},
                     stride_{(RANGES_EXPECT(0 < stride), stride)},
                     offset_{calc_offset(SizedRange<Rng>())}
@@ -88,7 +86,6 @@ namespace ranges
             private:
                 RANGES_CXX14_CONSTEXPR
                 range_difference_type_t<Rng> calc_offset(std::true_type)
-                    noexcept(noexcept(ranges::distance(std::declval<stride_view_base &>().base())))
                 {
                     if(auto const rem = ranges::distance(this->base()) % stride_)
                         return stride_ - rem;
@@ -108,7 +105,6 @@ namespace ranges
             {
                 stride_view_base() = default;
                 constexpr stride_view_base(Rng &&rng, range_difference_type_t<Rng> const stride)
-                    noexcept(std::is_nothrow_constructible<stride_view_adaptor<Rng>, Rng>::value)
                   : stride_view_adaptor<Rng>{std::move(rng)},
                     stride_{(RANGES_EXPECT(0 < stride), stride)}
                 {}
@@ -139,22 +135,43 @@ namespace ranges
             // stride_view const models Range if Rng const models Range, and
             // either (1) Rng is sized, so we can pre-calculate offset_, or (2)
             // Rng is not Bidirectional, so it does not need offset_.
-            static constexpr bool const_iterable =
-                Range<Rng const>() && (SizedRange<Rng>() || !BidirectionalRange<Rng>());
+            static constexpr bool const_iterable() noexcept
+            {
+                return Range<Rng const>() &&
+                    (SizedRange<Rng const>() || !BidirectionalRange<Rng const>());
+            }
 
+            // If the underlying range doesn't model BoundedRange, then we can't
+            // decrement the end and there's no reason to adapt the sentinel. Strictly
+            // speaking, we don't have to adapt the end iterator of Input and Forward
+            // Ranges, but in the interests of making the resulting stride view model
+            // BoundedView, adapt it anyway.
+            template<bool Const>
+            static constexpr bool can_bound() noexcept
+            {
+                using CRng = meta::const_if_c<Const, Rng>;
+                return BoundedRange<CRng>()
+                    && (SizedRange<CRng>() || !BidirectionalRange<CRng>());
+            }
+
+            template<bool Const>
             struct adaptor : adaptor_base
             {
             private:
-                using stride_view_t = meta::const_if_c<const_iterable, stride_view>;
+                using CRng = meta::const_if_c<Const, Rng>;
+                using stride_view_t = meta::const_if_c<Const, stride_view>;
                 stride_view_t *rng_;
             public:
                 adaptor() = default;
-                explicit constexpr adaptor(stride_view_t &rng) noexcept
+                constexpr adaptor(stride_view_t &rng) noexcept
                   : rng_(&rng)
                 {}
-                RANGES_CXX14_CONSTEXPR void next(iterator_t<Rng> &it)
-                    noexcept(noexcept(it != ranges::end(std::declval<Rng &>()),
-                        ranges::advance(it, 0, std::declval<sentinel_t<Rng> &>())))
+                template<bool Other,
+                    CONCEPT_REQUIRES_(Const && !Other)>
+                adaptor(adaptor<Other> that)
+                  : rng_(that.rng_)
+                {}
+                RANGES_CXX14_CONSTEXPR void next(iterator_t<CRng> &it)
                 {
                     auto const last = ranges::end(rng_->base());
                     RANGES_EXPECT(it != last);
@@ -164,30 +181,22 @@ namespace ranges
                         rng_->set_offset(delta);
                     }
                 }
-                CONCEPT_REQUIRES(BidirectionalRange<Rng>())
-                RANGES_CXX14_CONSTEXPR void prev(iterator_t<Rng> &it)
-                    noexcept(noexcept(ranges::advance(it, 0),
-                        it != ranges::begin(std::declval<Rng &>()),
-                        it == ranges::end(std::declval<Rng &>())))
+                CONCEPT_REQUIRES(BidirectionalRange<CRng>())
+                RANGES_CXX14_CONSTEXPR void prev(iterator_t<CRng> &it)
                 {
                     RANGES_EXPECT(it != ranges::begin(rng_->base()));
                     auto delta = -rng_->stride_;
                     if(it == ranges::end(rng_->base()))
                     {
-                        if(rng_->get_offset(false) < 0) // hasn't been set yet!
-                        {
-                            auto const rem = ranges::distance(rng_->base()) % rng_->stride_;
-                            rng_->set_offset(rem ? rng_->stride_ - rem : 0);
-                        }
+                        RANGES_EXPECT(rng_->get_offset() >= 0);
                         delta += rng_->get_offset();
                     }
                     ranges::advance(it, delta);
                 }
                 template<class Other,
-                    CONCEPT_REQUIRES_(SizedSentinel<Other, iterator_t<Rng>>())>
+                    CONCEPT_REQUIRES_(SizedSentinel<Other, iterator_t<CRng>>())>
                 RANGES_CXX14_CONSTEXPR range_difference_type_t<Rng> distance_to(
-                    iterator_t<Rng> const &here, Other const &there) const
-                    noexcept(noexcept(there - here))
+                    iterator_t<CRng> const &here, Other const &there) const
                 {
                     range_difference_type_t<Rng> delta = there - here;
                     if(delta < 0)
@@ -196,19 +205,20 @@ namespace ranges
                         delta += rng_->stride_ - 1;
                     return delta / rng_->stride_;
                 }
-                CONCEPT_REQUIRES(RandomAccessRange<Rng>())
+                CONCEPT_REQUIRES(RandomAccessRange<CRng>())
                 RANGES_CXX14_CONSTEXPR void advance(
-                    iterator_t<Rng> &it, range_difference_type_t<Rng> n)
-                    noexcept(noexcept(
-                        ranges::begin(std::declval<Rng &>()) == ranges::end(std::declval<Rng &>()),
-                        ranges::advance(it, n, std::declval<sentinel_t<Rng> &>()),
-                        ranges::advance(it, n),
-                        ranges::advance(it, n, std::declval<iterator_t<Rng> &>())))
+                    iterator_t<CRng> &it, range_difference_type_t<Rng> n)
                 {
-                    if(0 == n) return;
+                    if(0 == n)
+                        return;
                     n *= rng_->stride_;
                     auto const last = ranges::end(rng_->base());
-                    if(it == last) n -= rng_->get_offset();
+                    if(it == last)
+                    {
+                        RANGES_EXPECT(n < 0);
+                        RANGES_EXPECT(rng_->get_offset() >= 0);
+                        n += rng_->get_offset();
+                    }
                     if(0 < n)
                     {
                         auto delta = ranges::advance(it, n, last);
@@ -230,50 +240,26 @@ namespace ranges
                     }
                 }
             };
-            CONCEPT_REQUIRES(const_iterable)
-            constexpr adaptor begin_adaptor() const
-                noexcept(std::is_nothrow_constructible<adaptor, stride_view const &>::value &&
-                    std::is_nothrow_move_constructible<adaptor>::value)
+            RANGES_CXX14_CONSTEXPR adaptor<false> begin_adaptor()
             {
-                return adaptor{*this};
+                return adaptor<false>{*this};
             }
-            CONCEPT_REQUIRES(!const_iterable)
-            RANGES_CXX14_CONSTEXPR adaptor begin_adaptor()
-                noexcept(std::is_nothrow_constructible<adaptor, stride_view &>::value &&
-                    std::is_nothrow_move_constructible<adaptor>::value)
+            CONCEPT_REQUIRES(const_iterable())
+            constexpr adaptor<true> begin_adaptor() const
             {
-                return adaptor{*this};
+                return adaptor<true>{*this};
             }
-            // If the underlying sequence object doesn't model BoundedRange, then we can't
-            // decrement the end and there's no reason to adapt the sentinel. Strictly
-            // speaking, we don't have to adapt the end iterator of Input and Forward
-            // Ranges, but in the interests of making the resulting stride view model
-            // BoundedView, adapt it anyway.
-            CONCEPT_REQUIRES(const_iterable && BoundedRange<Rng>())
-            constexpr adaptor end_adaptor() const
-                noexcept(std::is_nothrow_constructible<adaptor, stride_view const &>::value &&
-                    std::is_nothrow_move_constructible<adaptor>::value)
+
+            RANGES_CXX14_CONSTEXPR
+            meta::if_c<can_bound<false>(), adaptor<false>, adaptor_base> end_adaptor()
             {
-                return adaptor{*this};
+                return {*this};
             }
-            CONCEPT_REQUIRES(!const_iterable && BoundedRange<Rng>())
-            RANGES_CXX14_CONSTEXPR adaptor end_adaptor()
-                noexcept(std::is_nothrow_constructible<adaptor, stride_view &>::value &&
-                    std::is_nothrow_move_constructible<adaptor>::value)
+            CONCEPT_REQUIRES(const_iterable())
+            constexpr
+            meta::if_c<can_bound<true>(), adaptor<true>, adaptor_base> end_adaptor() const
             {
-                return adaptor{*this};
-            }
-            CONCEPT_REQUIRES(const_iterable && !BoundedRange<Rng>())
-            constexpr adaptor_base end_adaptor() const
-                noexcept(std::is_nothrow_constructible<adaptor_base, stride_view const &>::value)
-            {
-                return {};
-            }
-            CONCEPT_REQUIRES(!const_iterable && !BoundedRange<Rng>())
-            RANGES_CXX14_CONSTEXPR adaptor_base end_adaptor()
-                noexcept(std::is_nothrow_constructible<adaptor_base, stride_view &>::value)
-            {
-                return {};
+                return {*this};
             }
 
             constexpr range_size_type_t<Rng> size_(range_size_type_t<Rng> const n) const noexcept
@@ -284,19 +270,15 @@ namespace ranges
         public:
             stride_view() = default;
             constexpr stride_view(Rng rng, range_difference_type_t<Rng> const stride)
-                noexcept(std::is_nothrow_constructible<detail::stride_view_base<Rng>,
-                    Rng, range_difference_type_t<Rng>>::value)
               : detail::stride_view_base<Rng>{std::move(rng), stride}
             {}
-            CONCEPT_REQUIRES(SizedRange<Rng const>())
-            constexpr range_size_type_t<Rng> size() const
-                noexcept(noexcept(ranges::size(std::declval<Rng const &>())))
+            CONCEPT_REQUIRES(SizedRange<Rng>())
+            RANGES_CXX14_CONSTEXPR range_size_type_t<Rng> size()
             {
                 return size_(ranges::size(this->base()));
             }
-            CONCEPT_REQUIRES(!SizedRange<Rng const>() && SizedRange<Rng>())
-            RANGES_CXX14_CONSTEXPR range_size_type_t<Rng> size()
-                noexcept(noexcept(ranges::size(std::declval<Rng &>())))
+            CONCEPT_REQUIRES(SizedRange<Rng const>())
+            constexpr range_size_type_t<Rng> size() const
             {
                 return size_(ranges::size(this->base()));
             }
