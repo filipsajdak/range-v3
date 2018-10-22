@@ -128,13 +128,15 @@ std::cout << view::all(v) << std::endl;
 
 There are other ways you can compose actions together (in table below we assume that `auto v = std::vector{1,7,2,4,1,7,4,6,0,1};`).
 
+
+
 | Style              | Code                                                         |
 | ------------------ | ------------------------------------------------------------ |
-| As functions       | `unique(sort(v))`                                            |
-| Pipes (lvalue)     | `v | = sort | unique`                                        |
-| Pipes (rvalue)     | `v = std::move(v) | sort | unique;`                          |
-|                    | `v = v | move | sort | unique;`                              |
-| Pipes (initialize) | `auto v = std::vector{1,7,2,4,1,7,4,6,0,1} | sort | unique;` |
+| As functions       | `unique(sort(v))`                                        |
+| Pipes (lvalue)     | `v \| = sort \| unique` |
+| Pipes (rvalue)     | `v = std::move(v) \| sort \| unique;`  |
+|                    | `v = v \| move \| sort \| unique;` |
+| Pipes (initialize) | `auto v = std::vector{1,7,2,4,1,7,4,6,0,1} \| sort \| unique;` |
 
 Based on that we can rewrite this 
 ```c++
