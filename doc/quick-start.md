@@ -30,22 +30,11 @@ for(auto&& e : rng)
 
 ### Range Concepts
 
-
-## What is a Container
-
-A container is a collection of objects which is expensive to copy `O(n)`. It is also something which owns the objects.
-
-## What is a View
-
-A view is cheap to copy `O(1)`. It is usually a pair of iterators (wrapped if needed in some adapters) which allows you to traverse over the collection. 
-
-**Note:** because of View is using iterators over collection it can be only created on containers which are an lvalue (not temporary containers).
-
-## What is a SizedRange
-
-SizedRange is a Range which has defined `size(rng)`. I.e. it cannot be a stream or an infinite range.
-
-
+| Concept      | Attributes               | Description                                                                                                                                                     |
+| ------------ | ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Container    | `O(n)` copy              | collection of objects; has ownership over the objects                                                                                                           |
+| View         | `O(1)` copy              | can be treated as pair of iterators (wrapped if needed in some adapters) which allows to traverse over the collection; **Note:** collection has to be lvalue    |
+| SizedRange   | `size(rng)` is defined   | range with defined size; i.e. it cannot be a stream or an infinite range                                                                                        |
 # How can you learn it?
 
 * https://ericniebler.github.io/range-v3/
