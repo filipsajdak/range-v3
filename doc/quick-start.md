@@ -293,7 +293,7 @@ So the line with the pipe itself becomes very easy to read - if you have common 
 
 You may wonder what a type of such composed range is - this is a very straightforward type which is created by the composition of wrapped types of ranges. Above view `v | evens | squared` looks like this:
 
-```
+```c++
 ranges::v3::transform_view<
 
   ranges::v3::remove_if_view< // this is filter
