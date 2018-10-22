@@ -229,6 +229,8 @@ $RECYCLE.BIN/
 *.VC.opendb
 .vscode/
 .vs/
+node_modules/
+package-lock.json
 
 \#*#
 .#*
