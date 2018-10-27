@@ -1,4 +1,8 @@
-# What is the range-v3 library
+
+
+# Range-v3 quickstart
+
+This documentation was created based on presentation https://slides.com/filipsajdak-1/range-v3-how-to-start 
 
 ## What is a range
 
@@ -318,4 +322,240 @@ ranges::v3::transform_view<
 
 ## Views are lazy
 
-You have to remember that creation of a view is cheap 
+You have to remember that creation of a view is cheap - you can considered it as copying two iterators. You have to be aware of that when you want to compare performance of your code.
+
+I.e. let's assume that we need a function which returns integers which are powers of two not greater then the maximum value which we set by passing an argument to this function. Currently we will end up with (more or less):
+```c++
+auto v1::pow2(int max) {
+    std::vector<int> res;
+    for (int i = 1; i<max; i*=2)
+        res.push_back(i);
+    return res;
+}
+```
+Using range-v3 we can come up with
+```c++
+auto v2::pow2(int max) {
+    return view::generate([i=1]() mutable {
+	const int res = i; 
+	i*=2; 
+	return res;
+    }) | view::take_while([max](auto i){ return i<max; });
+}
+```
+
+Both implementations will give you the same results if you use them in range-for loop
+```c++
+for(auto e : pow2(100))
+    std::cout << e << " ";
+cout << std::endl;
+```
+
+But when you compare execution of function
+```c++
+auto powers = pow2(100);
+```
+
+You will see that range version is extreamly fast compared to standard version. The reason is that range version is not creating any container and is not doing any work at all. 
+
+**Note:** Views are lazy - no work is done until you use it.
+
+If you don't need container (but only values) range version should work better for you.
+
+## More complicated examples
+
+### Zip, Cartesian product &
+
+**Note:** Example proposed by Bartosz Duszel <bartosz.duszel@siili.com>
+
+Assuming that you have list of operationas and two lists of arguments we would like to make all operations on each pair of arguments (one taken from one list and second from other respectively).
+```c++
+/* pseudo code - thanks to Bartosz Duszel (lisp hero)
+
+vector ops = {+, -, *}
+vector in1 = {1, 2, 3, 4, 5}
+vector in2 = {6, 7, 8, 9, 10}
+
+vector res = {1 + 6, 2 + 7, ..., 1 - 6, 2 - 7, ..., 1 * 6, 2 * 7, ...} 
+*/
+
+std::function<int(int,int)> ops[] = { std::plus(), std::minus(), 
+                                      std::multiplies()};   
+auto i1 = {1, 2, 3, 4, 5};
+auto i2 = {6, 7, 8, 9, 10};    
+				  
+auto r = cartesian_product(ops, zip(i1, i2)) | transform( [](auto&& e){ 
+    auto&& [op, args] = e;
+    return std::apply(op, args);
+});
+					      
+std::cout << r << std::endl;
+
+// Output: [7,9,11,13,15,-5,-5,-5,-5,-5,6,14,24,36,50]
+```
+
+### Strings
+
+You should be aware that strings are also ranges so if you have range of strings and i.e. you want to print them you may be suprised on what you will get.
+
+```c++
+const auto csv = "11,12,13\n21,22,23";
+    
+auto res = view::c_str(csv) | view::split('\n') | view::transform([](auto&& line) {
+    return line | view::split(',');
+});
+					     
+std::cout << res << std::endl;
+
+// Output: [[[1,1],[1,2],[1,3]],[[2,1],[2,2],[2,3]]]
+```
+
+You might be even more suprised when you will display string with colon (`,`)
+```c++
+const auto csv = "11,12,13\n21,22,23";
+std::cout << view::c_str(csv) << std::endl;
+
+/* Output: [1,1,,,1,2,,,1,3,
+           ,2,1,,,2,2,,,2,3] */
+```
+
+If you are suprised because of triple colons please remember that ',' is also a 'char' so when you see '2,,,1' it means that between '2' and '1' there is a ','.
+
+## Lazy Views Features
+
+### Infinite ranges
+
+Because ranges are lazy (they don't evalueate its values at the moment of creation) they can be infinite i.e.:
+```c++
+uto&& e : view::ints(0))
+    std::cout << e << " ";
+
+    /* Output: 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 
+    18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 
+    36 37 38 39 40 41 42 43 44 45 46 47 48 49 50 51 52 53 
+    54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71 
+    72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89 
+    90 91 92 93 94 95 96 97 98 99 100 101 102 103 104 105 
+    106 107 108 109 110 111 112 113 114 115 116 117 118 119 
+    120 121 122 123 124 125 126 127 128 129 130 131 132 ... */
+```
+
+Unlimited ranges are kind of generators. Of course you don't have to run generation infinitly you can limit it by taking specific number of elements (by using `view::take(int)`) i.e.:
+```c++
+for(auto&& e : view::ints(0) | view::take(10))
+    std::cout << e << " ";
+std::cout << "Finished!" << std::endl;
+
+// Output: 0 1 2 3 4 5 6 7 8 9 Finished!
+```
+
+For convenience you can use overload of `view::take(int,int)` which takes initial value for generation and number of elements to be generated.
+```c++
+for(auto&& e : view::ints(0, 10))
+    std::cout << e << " ";
+std::cout << "Finished!" << std::endl;
+
+// Output: 0 1 2 3 4 5 6 7 8 9 Finished!
+```
+
+#### Interesting generaors
+
+Using composition we can create really interesting generators. I.e. by composing three `for_each` algorithms together with `yield_if` we can make generator of Pythagorean Triples:
+```c++
+using namespace ranges::view;
+
+const auto triples = for_each(ints(1), [](int z) {
+    return for_each(ints(1, z + 1), [=](int x) {
+        return for_each(ints(x, z + 1), [=](int y) {
+	    return yield_if(x * x + y * y == z * z, 
+	                    std::tuple(x, y, z));
+        });
+    });
+});
+								    
+for(auto&& [x,y,z] : triples | take(10))
+    std::cout << x << "\t" << y << "\t" << z << "\n";
+```
+
+Which generates us ten triples
+```c++
+/* Output:
+3	4	5
+6	8	10
+5	12	13
+9	12	15
+8	15	17
+12	16	20
+7	24	25
+15	20	25
+10	24	26
+20	21	29
+*/
+```
+
+#### Other views
+
+Let's assume that you want to take elements from generator starting from 100th to 10th (exclusive). You can achieve that in multiple ways:
+```c++
+// takes elements on position from 100 to 105 (exclusive) 
+pythagorean_triples | view::slice(100,105); 
+
+// shorter
+pythagorean_triples[{100,105}]; 
+
+// other way
+pythagorean_triples | view::drop(100) | view::take(5);
+
+// using 'end' in slice
+view::take(pythagorean_triples, 105)[{end-5, end}];
+```
+
+## Watch out for recurring views
+
+Assume that you have objects organized in tree-like structure and you would like to traverse all of the objects and get one of its attributes. Lets say the object looks like
+```c++
+struct x {
+  std::string name;
+  std::vector<x*> nested;
+};
+```
+and you would like to get all the names from all the objects.
+
+You can try to do it by
+```c++
+template <typename Rng>
+auto recurse(Rng&& rng) {
+  return rng | view::transform([&}(auto* e) {
+                 return concat(view::single(e->name),
+		               e->nested.empty() ? view::empty<std::string>() : recurse(e->nested)
+		              );
+  }) | view::join;
+};
+```
+but it will fail because `recurse` function has to deduce the return type but before function returns it calls `recurse` function again. Compiler is unable to evaluate the return type.
+
+If you find yourself in similar situation you can use type-erased solution which is called `any_view`.
+```c++
+template <typename Rng>
+static any_view<std::string_view> recurse(Rng&& rng) {
+    return rng | view::transform([&](auto* e){
+            return concat(view::single(e->name), 
+			  e->nested.empty() ? view::empty<std::string_view>() : recurse(e->nested)
+			 );
+    }) | view::join;
+};
+```
+
+This solution is not perfect. If you compare it to solution which traverse all objects using range-for loops and stores the names into `std::vector` you will see that solution with `any_view` is almost **6 times slower**.
+
+**Note:** If possible avoid using `any_view`.
+
+# External references
+* http://ericniebler.com/2014/11/23/container-algorithms/
+* https://hannes.hauswedell.net/post/2018/04/11/view1/
+* https://www.fluentcpp.com/2018/02/09/introduction-ranges-library/
+* https://stackoverflow.com/questions/43577873/range-v3-flattening-a-sequence
+* https://stackoverflow.com/questions/48402558/how-to-split-a-stdstring-into-a-range-v3-of-stdstring-views
+* http://www.modernescpp.com/index.php/the-new-ranges-library
+* https://arne-mertz.de/2017/01/ranges-stl-next-level/
+
