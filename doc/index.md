@@ -543,3 +543,6 @@ Below is a list of the eager range combinators, or *actions*, that Range v3 prov
 \subsection example-is_sorted is_sorted
 
 \snippet is_sorted.cpp is_sorted
+<!--stackedit_data:
+eyJoaXN0b3J5IjpbLTExNTgxOTMwNDJdfQ==
+-->
